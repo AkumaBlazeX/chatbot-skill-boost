@@ -1,33 +1,33 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { v4 as uuidv4 } from 'uuid';
 import ChatMessage, { ChatMessageProps } from './ChatMessage';
 import ChatInput from './ChatInput';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
-import { questions } from '@/data/sampleQuestions';
 import { jobRoles } from '@/data/jobRoles';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/components/ui/use-toast';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface ChatInterfaceProps {
   roleId: string;
   onBack: () => void;
 }
 
+interface ChatMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+}
+
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ roleId, onBack }) => {
   const [messages, setMessages] = useState<ChatMessageProps[]>([]);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isLoadingQuestion, setIsLoadingQuestion] = useState(false);
   const chatContainerRef = useRef<HTMLDivElement>(null);
-  const queryClient = useQueryClient();
   const { user } = useAuth();
   
-  const roleQuestions = questions[roleId] || [];
   const selectedRole = jobRoles.find(role => role.id === roleId);
 
   // Create a new chat session
@@ -77,28 +77,76 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ roleId, onBack }) => {
     }
   };
 
-  // Load messages for a session
-  const loadMessages = async (session_id: string) => {
+  // Generate a question using OpenAI
+  const generateQuestion = async () => {
+    if (!sessionId) return null;
+    
+    setIsLoadingQuestion(true);
+    
     try {
-      const { data, error } = await supabase
-        .from('chat_messages')
-        .select('*')
-        .eq('session_id', session_id)
-        .order('created_at', { ascending: true });
+      // Get previous questions to avoid repetition
+      const previousQuestions = messages
+        .filter(msg => msg.type === 'bot')
+        .map(msg => msg.content);
       
-      if (error) throw error;
+      const response = await supabase.functions.invoke('generate-question', {
+        body: { 
+          roleId, 
+          previousQuestions
+        }
+      });
       
-      const formattedMessages: ChatMessageProps[] = data.map(msg => ({
-        type: msg.is_user ? 'user' : 'bot',
-        content: msg.content,
-        timestamp: new Date(msg.created_at),
-        isNew: false
+      if (response.error) throw new Error(response.error.message);
+      
+      return response.data.question;
+    } catch (error) {
+      console.error('Error generating question:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to generate question',
+        variant: 'destructive'
+      });
+      return null;
+    } finally {
+      setIsLoadingQuestion(false);
+    }
+  };
+
+  // Get AI response to user input
+  const getAIResponse = async (userMessage: string) => {
+    if (!sessionId) return null;
+    
+    try {
+      // Format messages for OpenAI in the chat format
+      const formattedMessages: ChatMessage[] = messages.map(msg => ({
+        role: msg.type === 'user' ? 'user' : 'assistant',
+        content: msg.content
       }));
       
-      return formattedMessages;
+      // Add the new user message
+      formattedMessages.push({
+        role: 'user',
+        content: userMessage
+      });
+      
+      const response = await supabase.functions.invoke('chat-ai', {
+        body: { 
+          messages: formattedMessages,
+          roleContext: roleId
+        }
+      });
+      
+      if (response.error) throw new Error(response.error.message);
+      
+      return response.data.content;
     } catch (error) {
-      console.error('Error loading messages:', error);
-      return [];
+      console.error('Error getting AI response:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to get AI response',
+        variant: 'destructive'
+      });
+      return null;
     }
   };
 
@@ -113,7 +161,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ roleId, onBack }) => {
         // Add welcome message
         const initialMessage: ChatMessageProps = {
           type: 'bot',
-          content: `Welcome to the ${selectedRole?.title || 'Skill Assessment'} session! I'll ask you a series of questions to help evaluate and improve your skills in this area. Let's get started!`,
+          content: `Welcome to the ${selectedRole?.title || 'Skill Assessment'} interview! I'll ask you a series of questions to help evaluate your skills in this area. Please respond naturally as if in a real interview. Let's get started!`,
           timestamp: new Date(),
           isNew: true
         };
@@ -121,30 +169,21 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ roleId, onBack }) => {
         setMessages([initialMessage]);
         await saveMessage(initialMessage, newSessionId);
         
-        // Add first question after a short delay
+        // Generate and add first question after a short delay
         setTimeout(async () => {
-          if (roleQuestions.length > 0) {
+          const question = await generateQuestion();
+          if (question) {
             const questionMessage: ChatMessageProps = {
               type: 'bot',
-              content: roleQuestions[0].text,
+              content: question,
               timestamp: new Date(),
               isNew: true
             };
             
             setMessages(prev => [...prev, questionMessage]);
             await saveMessage(questionMessage, newSessionId);
-          } else {
-            const noQuestionMessage: ChatMessageProps = {
-              type: 'bot',
-              content: "I don't have any specific questions for this role yet, but you can ask me anything about it!",
-              timestamp: new Date(),
-              isNew: true
-            };
-            
-            setMessages(prev => [...prev, noQuestionMessage]);
-            await saveMessage(noQuestionMessage, newSessionId);
           }
-        }, 1000);
+        }, 1500);
       }
     };
     
@@ -157,20 +196,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ roleId, onBack }) => {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
   }, [messages]);
-
-  const addBotMessage = async (content: string) => {
-    if (!sessionId) return;
-    
-    const newMessage: ChatMessageProps = {
-      type: 'bot',
-      content,
-      timestamp: new Date(),
-      isNew: true
-    };
-    
-    setMessages(prev => [...prev, newMessage]);
-    await saveMessage(newMessage, sessionId);
-  };
 
   const handleSendMessage = async (content: string) => {
     if (!sessionId) return;
@@ -188,40 +213,88 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ roleId, onBack }) => {
     
     setIsWaitingForResponse(true);
     
-    // Simulate AI thinking
-    setTimeout(async () => {
-      setIsWaitingForResponse(false);
+    // Get AI response
+    const aiResponse = await getAIResponse(content);
+    
+    setIsWaitingForResponse(false);
+    
+    if (aiResponse) {
+      // Add AI response
+      const botMessage: ChatMessageProps = {
+        type: 'bot',
+        content: aiResponse,
+        timestamp: new Date(),
+        isNew: true
+      };
       
-      // Move to next question if available
-      const nextIndex = currentQuestionIndex + 1;
+      setMessages(prev => [...prev, botMessage]);
+      await saveMessage(botMessage, sessionId);
       
-      if (nextIndex < roleQuestions.length) {
-        setCurrentQuestionIndex(nextIndex);
-        
-        // First add a response to the user's answer
-        const randomResponses = [
-          "Thanks for your answer. Let's move on to the next question.",
-          "Got it! That's an interesting perspective. Next question:",
-          "I appreciate your response. Moving forward:"
-        ];
-        
-        const responseIndex = Math.floor(Math.random() * randomResponses.length);
-        await addBotMessage(randomResponses[responseIndex]);
-        
-        // Then add the next question after a delay
+      // Check if we should ask another question
+      // For simplicity, we'll just check if we've asked fewer than 5 questions
+      const botMessageCount = messages.filter(msg => msg.type === 'bot').length;
+      
+      if (botMessageCount < 10) {
+        // Wait a bit before asking the next question
         setTimeout(async () => {
-          await addBotMessage(roleQuestions[nextIndex].text);
-        }, 1500);
-      } else {
-        // End of questions
-        await addBotMessage("Great job! You've completed all the questions. I'll prepare your skill assessment report shortly.");
-        
-        // Add a simulated report summary after delay
-        setTimeout(async () => {
-          await addBotMessage(`Based on our conversation, here's a brief assessment of your ${selectedRole?.title} skills:\n\n• You demonstrated good understanding of core concepts\n• Your communication is clear and professional\n• Consider exploring more advanced topics in ${selectedRole?.skills[0]} and ${selectedRole?.skills[1]}\n\nYou can view your detailed report in the dashboard when it's ready.`);
+          const nextQuestion = await generateQuestion();
           
-          // Mark session as completed
-          try {
+          if (nextQuestion) {
+            const questionMessage: ChatMessageProps = {
+              type: 'bot',
+              content: nextQuestion,
+              timestamp: new Date(),
+              isNew: true
+            };
+            
+            setMessages(prev => [...prev, questionMessage]);
+            await saveMessage(questionMessage, sessionId);
+          }
+        }, 3000);
+      } else {
+        // End of interview
+        setTimeout(async () => {
+          const summaryMessage: ChatMessageProps = {
+            type: 'bot',
+            content: "That concludes our interview. Thank you for your time and thoughtful responses. I'll now analyze our conversation and provide you with some feedback on your strengths and areas for improvement.",
+            timestamp: new Date(),
+            isNew: true
+          };
+          
+          setMessages(prev => [...prev, summaryMessage]);
+          await saveMessage(summaryMessage, sessionId);
+          
+          // Generate a summary/feedback after a delay
+          setTimeout(async () => {
+            // Get all the messages as context
+            const allMessages = [
+              {
+                role: 'system',
+                content: `You are an AI interviewer for a ${selectedRole?.title} role. You've just completed an interview with a candidate. Now provide a summary of their performance, highlighting strengths and areas for improvement. Be constructive and specific, referring to their actual answers.`
+              },
+              {
+                role: 'user',
+                content: `Please provide a summary assessment of this candidate based on our interview. Here's the transcript: ${messages.map(m => `\n${m.type === 'user' ? 'Candidate' : 'Interviewer'}: ${m.content}`).join('')}`
+              }
+            ];
+            
+            const response = await supabase.functions.invoke('chat-ai', {
+              body: { messages: allMessages, roleContext: roleId }
+            });
+            
+            if (response.error) throw new Error(response.error.message);
+            
+            const feedbackMessage: ChatMessageProps = {
+              type: 'bot',
+              content: response.data.content,
+              timestamp: new Date(),
+              isNew: true
+            };
+            
+            setMessages(prev => [...prev, feedbackMessage]);
+            await saveMessage(feedbackMessage, sessionId);
+            
+            // Mark session as completed
             await supabase
               .from('chat_sessions')
               .update({ 
@@ -229,12 +302,10 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ roleId, onBack }) => {
                 score: Math.floor(Math.random() * 41) + 60 // Random score between 60-100
               })
               .eq('id', sessionId);
-          } catch (error) {
-            console.error('Error updating chat session:', error);
-          }
-        }, 3000);
+          }, 3000);
+        }, 2000);
       }
-    }, 1500);
+    }
   };
 
   return (
@@ -244,8 +315,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ roleId, onBack }) => {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>
-          <h2 className="font-semibold">{selectedRole?.title || 'Skill Assessment'}</h2>
-          <p className="text-xs text-muted-foreground">Powered by AI</p>
+          <h2 className="font-semibold">{selectedRole?.title || 'Skill Assessment'} Interview</h2>
+          <p className="text-xs text-muted-foreground">AI-Powered Interview Practice</p>
         </div>
       </div>
       
@@ -253,11 +324,20 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ roleId, onBack }) => {
         {messages.map((msg, index) => (
           <ChatMessage key={index} {...msg} />
         ))}
+        {isLoadingQuestion && (
+          <div className="flex gap-3 p-4">
+            <Skeleton className="h-8 w-8 rounded-full" />
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-60" />
+              <Skeleton className="h-4 w-40" />
+            </div>
+          </div>
+        )}
       </div>
       
       <ChatInput
         onSendMessage={handleSendMessage}
-        isDisabled={isWaitingForResponse}
+        isDisabled={isWaitingForResponse || isLoadingQuestion}
         placeholder={isWaitingForResponse ? "AI is typing..." : "Type your response..."}
       />
     </div>
