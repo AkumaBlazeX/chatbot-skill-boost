@@ -4,11 +4,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import RoleSelection from '../role-selection/RoleSelection';
 import ChatInterface from '../chat/ChatInterface';
-import { LogOut } from 'lucide-react';
+import { LogOut, History } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   const handleSelectRole = (roleId: string) => {
     setSelectedRole(roleId);
@@ -26,8 +28,17 @@ const Dashboard: React.FC = () => {
         </div>
         
         <div className="flex items-center gap-4">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => navigate('/history')}
+            className="flex items-center gap-1"
+          >
+            <History className="h-4 w-4" />
+            History
+          </Button>
           <span className="text-sm text-gray-600">
-            Hello, {user?.name || 'User'}
+            Hello, {user?.user_metadata?.full_name || user?.email || 'User'}
           </span>
           <Button variant="ghost" size="sm" onClick={logout}>
             <LogOut className="h-4 w-4 mr-2" />
