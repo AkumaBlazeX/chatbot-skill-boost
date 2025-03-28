@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { toast } from '@/components/ui/use-toast';
 
 interface SignupFormProps {
   onSwitchToLogin: () => void;
@@ -22,19 +23,30 @@ const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin }) => {
     e.preventDefault();
     
     if (!name || !email || !password) {
+      toast({
+        title: 'Missing fields',
+        description: 'Please fill in all required fields.',
+        variant: 'destructive',
+      });
       return;
     }
     
     if (password !== confirmPassword) {
-      // Handle password mismatch
+      toast({
+        title: 'Password mismatch',
+        description: 'The passwords you entered do not match.',
+        variant: 'destructive',
+      });
       return;
     }
     
     setIsSubmitting(true);
     try {
       await signup(name, email, password);
-    } catch (error) {
-      // Error is handled in the auth context
+      // Success handled in AuthContext
+    } catch (error: any) {
+      // Error already handled in AuthContext
+      console.error('Signup error:', error);
     } finally {
       setIsSubmitting(false);
     }

@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import RoleSelection from '../role-selection/RoleSelection';
 import ChatInterface from '../chat/ChatInterface';
-import { LogOut, History } from 'lucide-react';
+import { LogOut, History, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const Dashboard: React.FC = () => {
@@ -36,6 +36,15 @@ const Dashboard: React.FC = () => {
           >
             <History className="h-4 w-4" />
             History
+          </Button>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => navigate('/profile')}
+            className="flex items-center gap-1"
+          >
+            <User className="h-4 w-4" />
+            Profile
           </Button>
           <span className="text-sm text-gray-600">
             Hello, {user?.user_metadata?.full_name || user?.email || 'User'}
