@@ -1,3 +1,4 @@
+
 import type { Config } from "tailwindcss";
 
 export default {
@@ -61,6 +62,18 @@ export default {
 					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
+				},
+				brand: {
+					50: '#eef5ff',
+					100: '#d9e8ff',
+					200: '#bcd7ff',
+					300: '#8ebfff',
+					400: '#599dff',
+					500: '#347bff',
+					600: '#1a5df7',
+					700: '#1246e7',
+					800: '#153adb',
+					900: '#1734ab',
 				}
 			},
 			borderRadius: {
@@ -84,11 +97,38 @@ export default {
 					to: {
 						height: '0'
 					}
+				},
+				typing: {
+					'0%': {
+						width: '0%',
+						visibility: 'hidden'
+					},
+					'100%': {
+						width: '100%'
+					}
+				},
+				blink: {
+					'50%': {
+						borderColor: 'transparent'
+					},
+					'100%': {
+						borderColor: 'white'
+					}
+				},
+				'dot-flashing': {
+					'0%': {
+						opacity: '0.9'
+					},
+					'50%, 100%': {
+						opacity: '0.3'
+					}
 				}
 			},
 			animation: {
 				'accordion-down': 'accordion-down 0.2s ease-out',
-				'accordion-up': 'accordion-up 0.2s ease-out'
+				'accordion-up': 'accordion-up 0.2s ease-out',
+				typing: 'typing 2s steps(20) infinite alternate, blink .7s infinite',
+				'dot-flashing': 'dot-flashing 1s infinite linear alternate'
 			}
 		}
 	},

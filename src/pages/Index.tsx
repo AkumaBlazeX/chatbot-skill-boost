@@ -1,14 +1,24 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+
+import React from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import AuthPage from '@/components/auth/AuthPage';
+import Dashboard from '@/components/dashboard/Dashboard';
 
 const Index = () => {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold mb-4">Welcome to Your Blank App</h1>
-        <p className="text-xl text-gray-600">Start building your amazing project here!</p>
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-pulse flex flex-col items-center">
+          <div className="h-12 w-48 bg-gray-200 rounded"></div>
+          <div className="h-4 w-24 mt-4 bg-gray-200 rounded"></div>
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  return isAuthenticated ? <Dashboard /> : <AuthPage />;
 };
 
 export default Index;
